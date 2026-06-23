@@ -39,12 +39,16 @@ export const CarouselDesigner: React.FC = () => {
     try {
       const response = await fetch("/api/generate-carousel", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "X-Gemini-Key": localStorage.getItem("custom_gemini_api_key") || ""
+        },
         body: JSON.stringify({ topic, slideCount, platform, tone }),
       });
       const data = await response.json();
       if (data.slides) {
         setSlides(data.slides);
+        setIsDemo(!!data.isMock);
       }
     } catch (err) {
       console.error("Error generating carousel:", err);
@@ -237,6 +241,12 @@ export const CarouselDesigner: React.FC = () => {
               </p>
             </div>
           </div>
+          {isDemo && (
+            <span className="bg-[#1A1A1C] text-[#D1FF26] text-[11px] px-3 py-1.5 rounded-lg border border-[#2A2A2C] font-mono flex items-center gap-1.5 shrink-0 self-start md:self-center">
+              <Sparkles className="w-3.5 h-3.5 animate-spin" />
+              Modo Demostración Activo (Sin Llave)
+            </span>
+          )}
         </div>
 
         {/* Input variables */}

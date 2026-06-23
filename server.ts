@@ -35,9 +35,30 @@ if (apiKey && apiKey !== "MY_GEMINI_API_KEY") {
   console.log("No valid GEMINI_API_KEY found, running in demo fallback mode.");
 }
 
+// Helper to extract user-supplied Gemini API key from request headers
+function getCustomAiClient(req: express.Request): GoogleGenAI | null {
+  const userKey = req.headers["x-gemini-key"] as string || req.headers["X-Gemini-Key"] as string;
+  if (userKey && userKey.trim().length > 10) {
+    try {
+      return new GoogleGenAI({
+        apiKey: userKey.trim(),
+        httpOptions: {
+          headers: {
+            'User-Agent': 'aistudio-build-custom',
+          }
+        }
+      });
+    } catch (err) {
+      console.error("Failed to initialize custom user Gemini client:", err);
+    }
+  }
+  return null;
+}
+
 // Helper wrapper to handle 503/service availability errors by falling back from gemini-3.5-flash to gemini-flash-latest or gemini-3.1-flash-lite
-async function generateContentWithFallback(params: any) {
-  if (!ai) {
+async function generateContentWithFallback(params: any, customAi?: GoogleGenAI | null) {
+  const activeAi = customAi || ai;
+  if (!activeAi) {
     throw new Error("Gemini client not initialized");
   }
 
@@ -49,7 +70,7 @@ async function generateContentWithFallback(params: any) {
   for (const model of uniqueModels) {
     try {
       console.log(`[Gemini Fallback Client] Attempting generation with model: ${model}`);
-      const response = await ai.models.generateContent({
+      const response = await activeAi.models.generateContent({
         ...params,
         model: model
       });
@@ -111,7 +132,8 @@ app.post("/api/generate-creatives", async (req, res) => {
     return list;
   };
 
-  if (!ai) {
+  const activeAi = getCustomAiClient(req) || ai;
+  if (!activeAi) {
     // Return high quality mock list
     return res.json({ creatives: generateMockCreatives(description, niche, audience), isMock: true });
   }
@@ -164,7 +186,7 @@ Return strictly valid JSON conforming to the requested schema. Do not include ma
           }
         }
       }
-    });
+    }, activeAi);
 
     const text = response.text || "[]";
     const baseTemplates = JSON.parse(text);
@@ -284,7 +306,8 @@ app.post("/api/generate-carousel", async (req, res) => {
     return { slides, platform: platform || "Instagram", topic: topic || "Contenido" };
   };
 
-  if (!ai) {
+  const activeAi = getCustomAiClient(req) || ai;
+  if (!activeAi) {
     return res.json(getMockCarousel());
   }
 
@@ -338,13 +361,13 @@ Return strictly valid JSON conforming to the requested schema. No markdown wrapp
           required: ["slides", "platform", "topic"]
         }
       }
-    });
+    }, activeAi);
 
     const parsed = JSON.parse(response.text || "{}");
-    res.json(parsed);
+    res.json({ ...parsed, isMock: false });
   } catch (error) {
     console.error("Error generating carousel:", error);
-    res.json(getMockCarousel());
+    res.json({ ...getMockCarousel(), isMock: true, error: "Fallo de API, usando fallback inteligente." });
   }
 });
 
@@ -375,7 +398,8 @@ app.post("/api/generate-copys", async (req, res) => {
     };
   };
 
-  if (!ai) {
+  const activeAi = getCustomAiClient(req) || ai;
+  if (!activeAi) {
     return res.json(getMockCopys());
   }
 
@@ -419,12 +443,13 @@ Return strictly valid JSON conforming to the requested schema. No markdown wrapp
           required: ["framework", "copys"]
         }
       }
-    });
+    }, activeAi);
 
-    res.json(JSON.parse(response.text || "{}"));
+    const parsed = JSON.parse(response.text || "{}");
+    res.json({ ...parsed, isMock: false });
   } catch (error) {
     console.error("Error generating copys:", error);
-    res.json(getMockCopys());
+    res.json({ ...getMockCopys(), isMock: true, error: "Fallo de API, usando fallback inteligente." });
   }
 });
 
@@ -464,7 +489,8 @@ app.post("/api/generate-calendar", async (req, res) => {
     return { calendar: list, niche: niche || "Marketing Digital" };
   };
 
-  if (!ai) {
+  const activeAi = getCustomAiClient(req) || ai;
+  if (!activeAi) {
     return res.json(getMockCalendar());
   }
 
@@ -511,7 +537,7 @@ Return strictly valid JSON conforming to the requested schema. No markdown wrapp
           required: ["calendar"]
         }
       }
-    });
+    }, activeAi);
 
     const parsed = JSON.parse(response.text || "{}");
     const generatedList = parsed.calendar || [];
@@ -552,10 +578,10 @@ Return strictly valid JSON conforming to the requested schema. No markdown wrapp
       }
     }
 
-    res.json({ calendar: fullCalendar, niche: niche || "General" });
+    res.json({ calendar: fullCalendar, niche: niche || "General", isMock: false });
   } catch (error) {
     console.error("Error generating calendar:", error);
-    res.json(getMockCalendar());
+    res.json({ ...getMockCalendar(), isMock: true, error: "Fallo de API, usando fallback inteligente." });
   }
 });
 
@@ -579,7 +605,8 @@ app.post("/api/generate-ideas", async (req, res) => {
     return { ideas: list };
   };
 
-  if (!ai) {
+  const activeAi = getCustomAiClient(req) || ai;
+  if (!activeAi) {
     return res.json(getMockIdeas());
   }
 
@@ -621,7 +648,7 @@ Return strictly valid JSON with an array named "ideas" containing these 30 items
           required: ["ideas"]
         }
       }
-    });
+    }, activeAi);
 
     const parsed = JSON.parse(response.text || "{}");
     // Ensure we have exactly 30 items
@@ -630,10 +657,292 @@ Return strictly valid JSON with an array named "ideas" containing these 30 items
       const mockFiller = getMockIdeas().ideas;
       ideasList = [...ideasList, ...mockFiller.slice(0, 30 - ideasList.length)];
     }
-    res.json({ ideas: ideasList.slice(0, 32) });
+    res.json({ ideas: ideasList.slice(0, 32), isMock: false });
   } catch (error) {
     console.error("Error generating ideas:", error);
-    res.json(getMockIdeas());
+    res.json({ ...getMockIdeas(), isMock: true, error: "Fallo de API, usando fallback inteligente." });
+  }
+});
+
+
+// --- METADATA & API INTEGRATIONS ENDPOINTS ---
+
+// Get OAuth Authorize URLs
+app.get("/api/auth/linkedin/url", (req, res) => {
+  const clientId = process.env.LINKEDIN_CLIENT_ID || req.query.client_id || "demo_linkedin_client_id";
+  const redirectUri = (req.query.redirect_uri as string) || `${process.env.APP_URL || "http://localhost:3000"}/api/auth/linkedin/callback`;
+  
+  const linkedinAuthUrl = `https://www.linkedin.com/oauth/v2/authorization?response_type=code&client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=w_member_social%20openid%20profile%20email`;
+  res.json({ url: linkedinAuthUrl });
+});
+
+app.get("/api/auth/meta/url", (req, res) => {
+  const clientId = process.env.META_CLIENT_ID || req.query.client_id || "demo_meta_client_id";
+  const redirectUri = (req.query.redirect_uri as string) || `${process.env.APP_URL || "http://localhost:3000"}/api/auth/meta/callback`;
+  
+  const facebookAuthUrl = `https://www.facebook.com/v18.0/dialog/oauth?client_id=${clientId}&redirect_uri=${encodeURIComponent(redirectUri)}&scope=instagram_basic,instagram_content_publish,ads_management,ads_read,pages_show_list,pages_read_engagement`;
+  res.json({ url: facebookAuthUrl });
+});
+
+// Callback Handlers
+app.get(["/api/auth/linkedin/callback", "/api/auth/linkedin/callback/"], async (req, res) => {
+  const { code } = req.query;
+  res.send(`
+    <html>
+      <head>
+        <title>LinkedIn Conectado</title>
+        <style>
+          body { background: #0A0A0B; color: #E5E5E7; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+          .card { background: #141416; border: 1px solid #222224; border-radius: 16px; padding: 32px; text-align: center; max-width: 400px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+          .icon { font-size: 48px; margin-bottom: 16px; color: #D1FF26; }
+          h2 { margin: 0 0 8px; color: white; }
+          p { color: #88888E; font-size: 14px; line-height: 1.5; margin: 0 0 24px; }
+          .btn { background: #D1FF26; color: black; border: none; padding: 10px 20px; border-radius: 9999px; font-weight: bold; cursor: pointer; }
+        </style>
+      </head>
+      <body>
+        <div class="card">
+          <div class="icon">🔗</div>
+          <h2>¡LinkedIn Autorizado!</h2>
+          <p>La cuenta ha sido vinculada con éxito. Esta ventana se cerrará automáticamente en unos segundos.</p>
+          <button class="btn" onclick="window.close()">Cerrar Ventana</button>
+        </div>
+        <script>
+          if (window.opener) {
+            window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', provider: 'linkedin', code: '${code}' }, '*');
+            setTimeout(() => { window.close(); }, 3000);
+          }
+        </script>
+      </body>
+    </html>
+  `);
+});
+
+app.get(["/api/auth/meta/callback", "/api/auth/meta/callback/"], async (req, res) => {
+  const { code } = req.query;
+  res.send(`
+    <html>
+      <head>
+        <title>Meta Conectado</title>
+        <style>
+          body { background: #0A0A0B; color: #E5E5E7; font-family: sans-serif; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+          .card { background: #141416; border: 1px solid #222224; border-radius: 16px; padding: 32px; text-align: center; max-width: 400px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+          .icon { font-size: 48px; margin-bottom: 16px; color: #D1FF26; }
+          h2 { margin: 0 0 8px; color: white; }
+          p { color: #88888E; font-size: 14px; line-height: 1.5; margin: 0 0 24px; }
+          .btn { background: #D1FF26; color: black; border: none; padding: 10px 20px; border-radius: 9999px; font-weight: bold; cursor: pointer; }
+        </style>
+      </head>
+      <body>
+        <div class="card">
+          <div class="icon">📸</div>
+          <h2>¡Meta & Instagram Autorizado!</h2>
+          <p>Tu cuenta publicitaria y perfil de Instagram han sido vinculados. Esta ventana se cerrará automáticamente.</p>
+          <button class="btn" onclick="window.close()">Cerrar Ventana</button>
+        </div>
+        <script>
+          if (window.opener) {
+            window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', provider: 'meta', code: '${code}' }, '*');
+            setTimeout(() => { window.close(); }, 3000);
+          }
+        </script>
+      </body>
+    </html>
+  `);
+});
+
+// Live / Simulated Proxy Endpoint for Integration Actions
+app.post("/api/integrations/test", async (req, res) => {
+  const { provider, action, payload, token, accountId } = req.body;
+  const logs: any[] = [];
+  
+  const addLog = (dir: "REQ" | "RES", method: string, url: string, headers: any, data: any) => {
+    logs.push({
+      timestamp: new Date().toLocaleTimeString(),
+      direction: dir,
+      method,
+      url,
+      headers,
+      data
+    });
+  };
+
+  if (provider === "linkedin") {
+    const apiToken = token || process.env.LINKEDIN_ACCESS_TOKEN;
+    const url = "https://api.linkedin.com/v2/posts";
+    
+    // Log the request
+    addLog("REQ", "POST", url, {
+      "Authorization": `Bearer ${apiToken ? (apiToken.slice(0, 10) + "...") : "MISSING"}`,
+      "Content-Type": "application/json",
+      "X-Restli-Protocol-Version": "2.0.0"
+    }, payload || { author: "urn:li:person:octi_linkedin_dev", commentary: "¡Estrategia de automatización publicitaria potenciada por AdTeam AI! 🚀" });
+
+    if (apiToken && !apiToken.startsWith("demo_") && apiToken !== "demo_token") {
+      // Real LinkedIn API Call
+      try {
+        const fetchRes = await fetch(url, {
+          method: "POST",
+          headers: {
+            "Authorization": `Bearer ${apiToken}`,
+            "Content-Type": "application/json",
+            "X-Restli-Protocol-Version": "2.0.0"
+          },
+          body: JSON.stringify(payload)
+        });
+        const resText = await fetchRes.text();
+        let resJson;
+        try { resJson = JSON.parse(resText); } catch { resJson = { raw: resText }; }
+        addLog("RES", "HTTP " + fetchRes.status, url, { "Content-Type": "application/json" }, resJson);
+        return res.json({ success: fetchRes.ok, logs, result: resJson });
+      } catch (err: any) {
+        addLog("RES", "ERROR", url, {}, { error: err.message || err });
+        return res.json({ success: false, logs, error: err.message });
+      }
+    } else {
+      // Sandbox Simulation
+      setTimeout(() => {
+        const mockResult = {
+          id: "urn:li:share:7193750293759",
+          status: "PUBLISHED",
+          author: payload?.author || "urn:li:person:octi_linkedin_dev",
+          lifecycleState: "PUBLISHED",
+          specificContent: {
+            "com.linkedin.ugc.ShareContent": {
+              shareCommentary: { text: payload?.commentary || "¡Estrategia de automatización publicitaria potenciada por AdTeam AI! 🚀" },
+              shareMediaCategory: "NONE"
+            }
+          }
+        };
+        addLog("RES", "HTTP 201 Created", url, {
+          "Content-Type": "application/json",
+          "x-li-uuid": "uuid-9371-abc-12"
+        }, mockResult);
+        return res.json({ success: true, logs, result: mockResult });
+      }, 400);
+    }
+  } else if (provider === "instagram") {
+    const apiToken = token || process.env.META_ACCESS_TOKEN;
+    const igAccountId = accountId || "17841405392019482";
+    const containerUrl = `https://graph.facebook.com/v18.0/${igAccountId}/media`;
+    
+    addLog("REQ", "POST", containerUrl, {
+      "Authorization": `Bearer ${apiToken ? (apiToken.slice(0, 10) + "...") : "MISSING"}`,
+      "Content-Type": "application/json"
+    }, {
+      image_url: payload?.image_url || "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe",
+      caption: payload?.caption || "¡Carrusel creativo diseñado por Cami!"
+    });
+
+    if (apiToken && !apiToken.startsWith("demo_") && apiToken !== "demo_token" && igAccountId !== "sandbox_ig_id") {
+      try {
+        const fetchRes = await fetch(containerUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            image_url: payload?.image_url,
+            caption: payload?.caption,
+            access_token: apiToken
+          })
+        });
+        const resJson = await fetchRes.json();
+        addLog("RES", "HTTP " + fetchRes.status, containerUrl, {}, resJson);
+        
+        if (fetchRes.ok && resJson.id) {
+          // Publish container
+          const publishUrl = `https://graph.facebook.com/v18.0/${igAccountId}/media_publish`;
+          addLog("REQ", "POST", publishUrl, {}, { creation_id: resJson.id });
+          
+          const publishRes = await fetch(publishUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              creation_id: resJson.id,
+              access_token: apiToken
+            })
+          });
+          const publishJson = await publishRes.json();
+          addLog("RES", "HTTP " + publishRes.status, publishUrl, {}, publishJson);
+          return res.json({ success: publishRes.ok, logs, result: publishJson });
+        }
+        return res.json({ success: false, logs, error: resJson.error?.message || "Failed to create media container" });
+      } catch (err: any) {
+        addLog("RES", "ERROR", containerUrl, {}, { error: err.message || err });
+        return res.json({ success: false, logs, error: err.message });
+      }
+    } else {
+      // Sandbox Simulation
+      setTimeout(() => {
+        const mockContainer = { id: "1803920194827103" };
+        addLog("RES", "HTTP 200 OK (Container Created)", containerUrl, {}, mockContainer);
+        
+        const publishUrl = `https://graph.facebook.com/v18.0/${igAccountId}/media_publish`;
+        addLog("REQ", "POST", publishUrl, {}, { creation_id: mockContainer.id });
+        
+        const mockResult = {
+          id: "1794827103892019",
+          status: "SUCCESS",
+          permalink: "https://instagram.com/p/C8_zY7uPx0A/",
+          media_type: "IMAGE"
+        };
+        addLog("RES", "HTTP 200 OK (Published)", publishUrl, {
+          "facebook-api-version": "v18.0"
+        }, mockResult);
+        
+        return res.json({ success: true, logs, result: mockResult });
+      }, 500);
+    }
+  } else if (provider === "meta-ads") {
+    const apiToken = token || process.env.META_ACCESS_TOKEN;
+    const adAccId = accountId || "act_1020304050";
+    const url = `https://graph.facebook.com/v18.0/${adAccId}/campaigns`;
+
+    addLog("REQ", "POST", url, {
+      "Authorization": `Bearer ${apiToken ? (apiToken.slice(0, 10) + "...") : "MISSING"}`
+    }, {
+      name: payload?.name || "Campaña de Domótica - Inteligencia Mateo",
+      objective: "OUTCOMES",
+      status: "PAUSED",
+      special_ad_categories: ["NONE"]
+    });
+
+    if (apiToken && !apiToken.startsWith("demo_") && apiToken !== "demo_token" && adAccId !== "sandbox_ads_id") {
+      try {
+        const fetchRes = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: payload?.name,
+            objective: payload?.objective || "OUTCOMES",
+            status: "PAUSED",
+            special_ad_categories: "NONE",
+            access_token: apiToken
+          })
+        });
+        const resJson = await fetchRes.json();
+        addLog("RES", "HTTP " + fetchRes.status, url, {}, resJson);
+        return res.json({ success: fetchRes.ok, logs, result: resJson });
+      } catch (err: any) {
+        addLog("RES", "ERROR", url, {}, { error: err.message || err });
+        return res.json({ success: false, logs, error: err.message });
+      }
+    } else {
+      // Sandbox Simulation
+      setTimeout(() => {
+        const mockResult = {
+          id: "2385029375920194",
+          status: "PAUSED",
+          name: payload?.name || "Campaña AdTeam AI - Mateo",
+          objective: "OUTCOMES",
+          configured_status: "PAUSED",
+          effective_status: "PAUSED"
+        };
+        addLog("RES", "HTTP 200 OK (Campaign Created)", url, {}, mockResult);
+        return res.json({ success: true, logs, result: mockResult });
+      }, 400);
+    }
+  } else {
+    res.status(400).json({ error: "Invalid provider specified" });
   }
 });
 

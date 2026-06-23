@@ -48,7 +48,10 @@ export const MetaAdsManager: React.FC = () => {
     try {
       const response = await fetch("/api/generate-creatives", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "X-Gemini-Key": localStorage.getItem("custom_gemini_api_key") || ""
+        },
         body: JSON.stringify({ description, niche, audience }),
       });
       const data = await response.json();

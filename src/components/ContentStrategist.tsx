@@ -11,6 +11,7 @@ export const ContentStrategist: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [copys, setCopys] = useState<CopyOption[]>([]);
   const [copiedIndex, setCopiedIndex] = useState<string | null>(null);
+  const [isDemo, setIsDemo] = useState(false);
 
   const generateCopys = async () => {
     setLoading(true);
@@ -18,17 +19,20 @@ export const ContentStrategist: React.FC = () => {
     try {
       const response = await fetch("/api/generate-copys", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "X-Gemini-Key": localStorage.getItem("custom_gemini_api_key") || ""
+        },
         body: JSON.stringify({ topic, framework, tone }),
       });
       const data = await response.json();
       if (data.copys) {
         setCopys(data.copys);
+        setIsDemo(!!data.isMock);
       }
     } catch (err) {
       console.error("Error generating copys:", err);
     } finally {
-      setLoading(true); // wait, should be false!
       setLoading(false);
     }
   };
@@ -48,18 +52,26 @@ export const ContentStrategist: React.FC = () => {
       
       {/* Parameter input panel */}
       <div className="bg-[#141416] border border-[#222224] rounded-2xl p-6">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="p-2.5 rounded-lg bg-[#D1FF26]/10 text-[#D1FF26] border border-[#D1FF26]/20">
-            ✍
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-lg bg-[#D1FF26]/10 text-[#D1FF26] border border-[#D1FF26]/20">
+              ✍
+            </div>
+            <div>
+              <h2 className="text-base font-semibold text-white">
+                Estratega de Contenido IA: Copys Persuasivos
+              </h2>
+              <p className="text-xs text-[#88888E] mt-0.5">
+                Santi define la estrategia de la oferta y Lauti redacta copys de alto impacto bajo metodologías probadas.
+              </p>
+            </div>
           </div>
-          <div>
-            <h2 className="text-base font-semibold text-white">
-              Estratega de Contenido IA: Copys Persuasivos
-            </h2>
-            <p className="text-xs text-[#88888E] mt-0.5">
-              Santi define la estrategia de la oferta y Lauti redacta copys de alto impacto bajo metodologías probadas.
-            </p>
-          </div>
+          {isDemo && (
+            <span className="bg-[#1A1A1C] text-[#D1FF26] text-[11px] px-3 py-1.5 rounded-lg border border-[#2A2A2C] font-mono flex items-center gap-1.5 shrink-0 self-start md:self-center">
+              <Sparkles className="w-3.5 h-3.5 animate-spin" />
+              Modo Demostración Activo (Sin Llave)
+            </span>
+          )}
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">

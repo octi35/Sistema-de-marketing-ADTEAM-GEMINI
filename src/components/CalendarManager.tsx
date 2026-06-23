@@ -9,6 +9,7 @@ export const CalendarManager: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [calendar, setCalendar] = useState<CalendarItem[]>([]);
   const [activeItem, setActiveItem] = useState<CalendarItem | null>(null);
+  const [isDemo, setIsDemo] = useState(false);
 
   // Sync state
   const [syncing, setSyncing] = useState(false);
@@ -29,13 +30,17 @@ export const CalendarManager: React.FC = () => {
     try {
       const response = await fetch("/api/generate-calendar", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "X-Gemini-Key": localStorage.getItem("custom_gemini_api_key") || ""
+        },
         body: JSON.stringify({ niche, topic }),
       });
       const data = await response.json();
       if (data.calendar) {
         setCalendar(data.calendar);
         setActiveItem(data.calendar[0]);
+        setIsDemo(!!data.isMock);
       }
     } catch (err) {
       console.error("Error generating calendar:", err);
@@ -114,6 +119,12 @@ export const CalendarManager: React.FC = () => {
               </p>
             </div>
           </div>
+          {isDemo && (
+            <span className="bg-[#1A1A1C] text-[#D1FF26] text-[11px] px-3 py-1.5 rounded-lg border border-[#2A2A2C] font-mono flex items-center gap-1.5 shrink-0 self-start md:self-center">
+              <Sparkles className="w-3.5 h-3.5 animate-spin" />
+              Modo Demostración Activo (Sin Llave)
+            </span>
+          )}
         </div>
 
         {/* Input variables */}

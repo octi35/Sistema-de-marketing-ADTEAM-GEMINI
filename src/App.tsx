@@ -62,31 +62,18 @@ export default function App() {
       {/* Main Grid Content */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col gap-6">
         
-        {/* Banner Section: visual workflow flowchart */}
-        <div className="bg-[#141416] border border-[#222224] rounded-2xl p-5 relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-80 h-80 rounded-full bg-gradient-to-tr from-[#D1FF26]/5 to-transparent -mr-40 -mt-40 filter blur-3xl pointer-events-none" />
-          
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-4">
-            <div>
-              <h2 className="text-xs font-semibold text-[#88888E] uppercase tracking-widest flex items-center gap-1.5">
-                <Activity className="w-4 h-4 text-[#D1FF26]" /> Flujo de Colaboración de los Agentes
-              </h2>
-              <p className="text-xs text-[#88888E] mt-0.5">
-                Haz clic en cualquier fase o avatar del pipeline para dirigirte instantáneamente a su espacio de trabajo correspondiente.
-              </p>
-            </div>
-          </div>
-
-          {/* Render workflow canvas diagram */}
-          <TeamWorkflow onNavigateTab={(tab) => {
+        {/* Flow of Collaboration Section - Rendered directly to avoid double nested borders */}
+        <TeamWorkflow 
+          activeTab={activeTab === "analytics" ? "mateo" : activeTab === "meta-ads" ? "santi" : activeTab === "carousel" ? "cami" : activeTab === "strategist" ? "lauti" : activeTab === "calendar" ? "facu" : activeTab === "pipeline" ? "sofi" : undefined}
+          onNavigateTab={(tab) => {
             if (tab === "mateo") setActiveTab("analytics");
             if (tab === "santi") setActiveTab("meta-ads");
             if (tab === "cami") setActiveTab("carousel");
             if (tab === "lauti") setActiveTab("strategist");
             if (tab === "facu") setActiveTab("calendar");
             if (tab === "sofi") setActiveTab("pipeline");
-          }} />
-        </div>
+          }} 
+        />
 
         {/* Dashboard workspace layout */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
