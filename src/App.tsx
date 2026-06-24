@@ -30,7 +30,7 @@ export default function App() {
       
       {/* Dynamic top bar */}
       <header className="bg-[#0A0A0B]/80 border-b border-[#222224] shrink-0 sticky top-0 z-50 backdrop-blur-md">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between gap-4">
+        <div className="max-w-[1500px] mx-auto px-4 sm:px-6 lg:px-8 py-4 flex items-center justify-between gap-4">
           
           {/* Logo brand */}
           <div className="flex items-center gap-3">
@@ -60,7 +60,7 @@ export default function App() {
       </header>
 
       {/* Main Grid Content */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col gap-6">
+      <main className="flex-1 max-w-[1500px] w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col gap-6">
         
         {/* Flow of Collaboration Section - Rendered directly to avoid double nested borders */}
         <TeamWorkflow 
@@ -141,7 +141,7 @@ export default function App() {
 
       {/* Footer bar */}
       <footer className="bg-[#0A0A0B] border-t border-[#222224] text-xs text-[#88888E] shrink-0 mt-auto">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col md:flex-row items-center justify-between gap-4">
+        <div className="max-w-[1500px] mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col md:flex-row items-center justify-between gap-4">
           <p>© 2026 AdTeam AI. Todos los derechos reservados. Diseñado para optimizar tu ROI publicitario de forma autónoma.</p>
           <div className="flex gap-4 font-mono text-[11px] text-[#66666E]">
             <span>Estilo de Pixel Art integrado</span>

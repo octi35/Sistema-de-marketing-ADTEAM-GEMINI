@@ -307,94 +307,96 @@ Preparado: 30 de Mayo de 2026 • Base analítica: Ventas NUEVAS de alto valor (
         </div>
  
         {/* Pipeline horizontal columns list */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-5 pt-2">
-          {columns.map((col, idx) => (
-            <div 
-              key={idx} 
-              className={`border rounded-2xl p-4 flex flex-col min-h-[460px] md:h-[510px] justify-between transition-all duration-300 hover:border-[#3A3A3D]/80 hover:shadow-xl hover:shadow-black/40 ${col.color}`}
-            >
-              <div className="flex flex-col h-full">
-                {/* Column Header */}
-                <div className="flex items-center justify-between border-b border-[#222224]/80 pb-3 mb-4">
-                  <span className="text-xs font-bold text-white font-mono flex items-center gap-2">
-                    <span className="text-sm">{col.icon}</span> 
-                    <span className="text-[11px] uppercase tracking-wider text-[#E5E5E7]">{col.title}</span>
-                  </span>
-                  <span className="text-[10px] bg-[#0A0A0B] border border-[#222224] px-2 py-0.5 rounded text-[#88888E] font-mono font-bold">
-                    {col.cards.length}
-                  </span>
-                </div>
+        <div className="overflow-x-auto pb-4 pt-2 -mx-4 px-4 custom-scrollbar">
+          <div className="flex gap-5 min-w-max pb-2">
+            {columns.map((col, idx) => (
+              <div 
+                key={idx} 
+                className={`border rounded-2xl p-4 flex flex-col min-h-[460px] md:h-[510px] justify-between transition-all duration-300 hover:border-[#3A3A3D]/80 hover:shadow-xl hover:shadow-black/40 ${col.color} w-[280px] sm:w-[310px] shrink-0`}
+              >
+                <div className="flex flex-col h-full">
+                  {/* Column Header */}
+                  <div className="flex items-center justify-between border-b border-[#222224]/80 pb-3 mb-4">
+                    <span className="text-xs font-bold text-white font-mono flex items-center gap-2">
+                      <span className="text-sm">{col.icon}</span> 
+                      <span className="text-[11px] uppercase tracking-wider text-[#E5E5E7]">{col.title}</span>
+                    </span>
+                    <span className="text-[10px] bg-[#0A0A0B] border border-[#222224] px-2 py-0.5 rounded text-[#88888E] font-mono font-bold">
+                      {col.cards.length}
+                    </span>
+                  </div>
 
-                {/* Cards Container with expanded height & optimized layouts */}
-                <div className="space-y-3.5 overflow-y-auto flex-1 max-h-[350px] md:max-h-[390px] pr-1.5 custom-scrollbar pb-3">
-                  {col.cards.map((card) => (
-                    <div 
-                      key={card.id} 
-                      onClick={() => setSelectedCard(card)}
-                      className="group/card bg-[#0A0A0B] p-4 rounded-xl border border-[#222224] hover:border-[#D1FF26]/40 hover:bg-[#111112] transition-all duration-200 cursor-pointer shadow-md hover:shadow-[#D1FF26]/5 space-y-3 transform hover:-translate-y-0.5 relative overflow-hidden"
-                    >
-                      {/* Interactive top line */}
-                      <div className="flex justify-between items-center gap-1.5">
-                        <span className={`text-[9px] px-2 py-0.5 rounded font-mono font-bold border ${
-                          card.tag === "Métricas" ? "bg-cyan-500/10 text-cyan-400 border-cyan-500/20" :
-                          card.tag === "Competidores" ? "bg-amber-500/10 text-amber-400 border-amber-500/20" :
-                          card.tag === "Plan Semanal" ? "bg-purple-500/10 text-purple-400 border-purple-500/20" :
-                          card.tag === "Conversión" ? "bg-rose-500/10 text-rose-400 border-rose-500/20" :
-                          card.tag === "Lluvia de Ideas" ? "bg-yellow-500/10 text-yellow-400 border-yellow-500/20" :
-                          card.tag === "Curaduría" ? "bg-orange-500/10 text-orange-400 border-orange-500/20" :
-                          card.tag === "Redacción Copy" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" :
-                          card.tag === "Guión de Video" ? "bg-pink-500/10 text-pink-400 border-pink-500/20" :
-                          card.tag === "Agenda" ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/20" :
-                          "bg-violet-500/10 text-violet-400 border-violet-500/20"
-                        }`}>
-                          {card.tag}
-                        </span>
-                        
-                        <span className="text-[9px] text-[#66666E] font-mono flex items-center gap-1 opacity-0 group-hover/card:opacity-100 transition-opacity text-right">
-                          Ver Estrategia <Eye className="w-2.5 h-2.5 text-[#D1FF26]" />
-                        </span>
-                      </div>
-
-                      {/* Card Title */}
-                      <h4 className="text-xs font-bold text-white group-hover/card:text-[#D1FF26] leading-snug transition-colors">
-                        {card.title}
-                      </h4>
-
-                      {/* Card description */}
-                      <p className="text-[11px] text-[#88888E] group-hover/card:text-[#A8A8B0] leading-relaxed line-clamp-2">
-                        {card.desc}
-                      </p>
-
-                      {/* Card Assignee footer icon */}
-                      <div className="pt-2 border-t border-[#1C1C1F] flex items-center justify-between">
-                        <div className="flex items-center gap-1.5">
-                          <PixelAvatar agentId={card.assigneeId} size="xs" />
-                          <span className="text-[9px] text-[#66666E] font-mono uppercase group-hover/card:text-[#88888E] transition-colors">
-                            {card.assigneeName}
+                  {/* Cards Container with expanded height & optimized layouts */}
+                  <div className="space-y-3.5 overflow-y-auto flex-1 max-h-[350px] md:max-h-[390px] pr-1.5 custom-scrollbar pb-3">
+                    {col.cards.map((card) => (
+                      <div 
+                        key={card.id} 
+                        onClick={() => setSelectedCard(card)}
+                        className="group/card bg-[#0A0A0B] p-4 rounded-xl border border-[#222224] hover:border-[#D1FF26]/40 hover:bg-[#111112] transition-all duration-200 cursor-pointer shadow-md hover:shadow-[#D1FF26]/5 space-y-3 transform hover:-translate-y-0.5 relative overflow-hidden"
+                      >
+                        {/* Interactive top line */}
+                        <div className="flex justify-between items-center gap-1.5">
+                          <span className={`text-[9px] px-2 py-0.5 rounded font-mono font-bold border ${
+                            card.tag === "Métricas" ? "bg-cyan-500/10 text-cyan-400 border-cyan-500/20" :
+                            card.tag === "Competidores" ? "bg-amber-500/10 text-amber-400 border-amber-500/20" :
+                            card.tag === "Plan Semanal" ? "bg-purple-500/10 text-purple-400 border-purple-500/20" :
+                            card.tag === "Conversión" ? "bg-rose-500/10 text-rose-400 border-rose-500/20" :
+                            card.tag === "Lluvia de Ideas" ? "bg-yellow-500/10 text-yellow-400 border-yellow-500/20" :
+                            card.tag === "Curaduría" ? "bg-orange-500/10 text-orange-400 border-orange-500/20" :
+                            card.tag === "Redacción Copy" ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" :
+                            card.tag === "Guión de Video" ? "bg-pink-500/10 text-pink-400 border-pink-500/20" :
+                            card.tag === "Agenda" ? "bg-indigo-500/10 text-indigo-400 border-indigo-500/20" :
+                            "bg-violet-500/10 text-violet-400 border-violet-500/20"
+                          }`}>
+                            {card.tag}
+                          </span>
+                          
+                          <span className="text-[9px] text-[#66666E] font-mono flex items-center gap-1 opacity-0 group-hover/card:opacity-100 transition-opacity text-right">
+                            Ver Estrategia <Eye className="w-2.5 h-2.5 text-[#D1FF26]" />
                           </span>
                         </div>
-                        <span className={`text-[8px] font-mono px-1.5 py-0.5 rounded ${
-                          card.status === "Completado" ? "bg-[#D1FF26]/10 text-[#D1FF26]" :
-                          card.status === "Listo para Publicar" ? "bg-green-500/10 text-green-400" :
-                          "bg-amber-400/10 text-amber-400"
-                        }`}>
-                          {card.status}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
 
-              {/* Column connector indicator at bottom */}
-              {idx < 4 && (
-                <div className="hidden lg:flex items-center justify-center gap-1 text-[#66666E] font-bold text-[10px] uppercase tracking-wider pt-3 border-t border-[#222224]/80 mt-1">
-                  <span>Siguiente Paso</span>
-                  <ChevronRight className="w-3.5 h-3.5 text-[#66666E] shrink-0" />
+                        {/* Card Title */}
+                        <h4 className="text-xs font-bold text-white group-hover/card:text-[#D1FF26] leading-snug transition-colors">
+                          {card.title}
+                        </h4>
+
+                        {/* Card description */}
+                        <p className="text-[11px] text-[#88888E] group-hover/card:text-[#A8A8B0] leading-relaxed line-clamp-2">
+                          {card.desc}
+                        </p>
+
+                        {/* Card Assignee footer icon */}
+                        <div className="pt-2 border-t border-[#1C1C1F] flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            <PixelAvatar agentId={card.assigneeId} size="xs" />
+                            <span className="text-[9px] text-[#66666E] font-mono uppercase group-hover/card:text-[#88888E] transition-colors">
+                              {card.assigneeName}
+                            </span>
+                          </div>
+                          <span className={`text-[8px] font-mono px-1.5 py-0.5 rounded ${
+                            card.status === "Completado" ? "bg-[#D1FF26]/10 text-[#D1FF26]" :
+                            card.status === "Listo para Publicar" ? "bg-green-500/10 text-green-400" :
+                            "bg-amber-400/10 text-amber-400"
+                          }`}>
+                            {card.status}
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-              )}
-            </div>
-          ))}
+
+                {/* Column connector indicator at bottom */}
+                {idx < 4 && (
+                  <div className="hidden lg:flex items-center justify-center gap-1 text-[#66666E] font-bold text-[10px] uppercase tracking-wider pt-3 border-t border-[#222224]/80 mt-1">
+                    <span>Siguiente Paso</span>
+                    <ChevronRight className="w-3.5 h-3.5 text-[#66666E] shrink-0" />
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 

@@ -8,6 +8,7 @@ export const CarouselDesigner: React.FC = () => {
   const [slideCount, setSlideCount] = useState(5);
   const [platform, setPlatform] = useState("Instagram");
   const [tone, setTone] = useState("Inspiracional y Práctico");
+  const [engine, setEngine] = useState("gemini"); // "gemini" or "claude"
   
   // App states
   const [loading, setLoading] = useState(false);
@@ -25,6 +26,7 @@ export const CarouselDesigner: React.FC = () => {
   // Presets themes
   const colorThemes = [
     { name: "Slate Dark", bgStart: "#0f172a", bgEnd: "#1e293b", text: "#f8fafc", accent: "#fbbf24" },
+    { name: "Nano Banana Yellow 🍌", bgStart: "#FCE22A", bgEnd: "#FCD900", text: "#111112", accent: "#000000" },
     { name: "Teal Deep", bgStart: "#042f2e", bgEnd: "#115e59", text: "#f0fdfa", accent: "#2dd4bf" },
     { name: "Sunset Orange", bgStart: "#7c2d12", bgEnd: "#451a03", text: "#fff7ed", accent: "#fdba74" },
     { name: "Vibrant Purple", bgStart: "#4c1d95", bgEnd: "#2e1065", text: "#f5f3ff", accent: "#c084fc" },
@@ -41,9 +43,10 @@ export const CarouselDesigner: React.FC = () => {
         method: "POST",
         headers: { 
           "Content-Type": "application/json",
-          "X-Gemini-Key": localStorage.getItem("custom_gemini_api_key") || ""
+          "X-Gemini-Key": localStorage.getItem("custom_gemini_api_key") || "",
+          "X-Anthropic-Key": localStorage.getItem("custom_anthropic_api_key") || ""
         },
-        body: JSON.stringify({ topic, slideCount, platform, tone }),
+        body: JSON.stringify({ topic, slideCount, platform, tone, engine }),
       });
       const data = await response.json();
       if (data.slides) {
@@ -92,6 +95,9 @@ export const CarouselDesigner: React.FC = () => {
     canvas.width = 1080;
     canvas.height = isPortrait ? 1350 : 1080;
 
+    // Detect if text should be dark for light backgrounds (like Banana Yellow)
+    const isDarkText = slide.textColor === "#111112" || slide.textColor === "#000000" || slide.textColor === "#121214";
+
     // Clear and draw gradient
     const gradient = ctx.createLinearGradient(0, 0, 1080, canvas.height);
     gradient.addColorStop(0, slide.bgGradientStart);
@@ -100,7 +106,7 @@ export const CarouselDesigner: React.FC = () => {
     ctx.fillRect(0, 0, 1080, canvas.height);
 
     // Dynamic graphic patterns (pixelated or sleek grid)
-    ctx.strokeStyle = "rgba(255,255,255,0.05)";
+    ctx.strokeStyle = isDarkText ? "rgba(0,0,0,0.03)" : "rgba(255,255,255,0.05)";
     ctx.lineWidth = 1;
     for (let i = 0; i < 1080; i += 60) {
       ctx.beginPath();
@@ -116,12 +122,12 @@ export const CarouselDesigner: React.FC = () => {
     }
 
     // Border Frame
-    ctx.strokeStyle = "rgba(255,255,255,0.06)";
+    ctx.strokeStyle = isDarkText ? "rgba(0,0,0,0.05)" : "rgba(255,255,255,0.06)";
     ctx.lineWidth = 16;
     ctx.strokeRect(20, 20, 1040, canvas.height - 40);
 
     // Slide Number Counter top right
-    ctx.fillStyle = "rgba(0,0,0,0.2)";
+    ctx.fillStyle = isDarkText ? "rgba(0,0,0,0.05)" : "rgba(0,0,0,0.2)";
     ctx.fillRect(880, 60, 140, 50);
     ctx.fillStyle = slide.accentColor;
     ctx.font = "bold 24px monospace";
@@ -129,7 +135,7 @@ export const CarouselDesigner: React.FC = () => {
     ctx.fillText(`${slide.slideNumber} / ${slides.length}`, 950, 92);
 
     // Logo Watermark bottom center
-    ctx.fillStyle = "rgba(255,255,255,0.3)";
+    ctx.fillStyle = isDarkText ? "rgba(0,0,0,0.4)" : "rgba(255,255,255,0.3)";
     ctx.font = "18px sans-serif";
     ctx.textAlign = "center";
     ctx.fillText(platform === "Instagram" ? "@tu_cuenta • IG Carousel" : "LinkedIn Post • Creado por AdTeam AI", 1080 / 2, canvas.height - 70);
@@ -165,7 +171,7 @@ export const CarouselDesigner: React.FC = () => {
 
     // Body text (clean sans font)
     y += 90;
-    ctx.fillStyle = "rgba(255,255,255,0.85)";
+    ctx.fillStyle = isDarkText ? "rgba(17,17,18,0.85)" : "rgba(255,255,255,0.85)";
     ctx.font = "34px sans-serif";
     
     const bodyWords = slide.body.split(" ");
@@ -186,12 +192,12 @@ export const CarouselDesigner: React.FC = () => {
     ctx.fillText(bodyLine, 90, y);
 
     // Graphic cue / Visual idea helper text at the bottom
-    ctx.fillStyle = "rgba(255,255,255,0.15)";
+    ctx.fillStyle = isDarkText ? "rgba(0,0,0,0.04)" : "rgba(255,255,255,0.15)";
     ctx.fillRect(90, canvas.height - 250, 900, 120);
-    ctx.fillStyle = "#cbd5e1";
+    ctx.fillStyle = isDarkText ? "rgba(17,17,18,0.7)" : "#cbd5e1";
     ctx.font = "italic 22px sans-serif";
     ctx.fillText(`💡 Concepto Visual Recomendado:`, 110, canvas.height - 210);
-    ctx.fillStyle = "#94a3b8";
+    ctx.fillStyle = isDarkText ? "rgba(17,17,18,0.55)" : "#94a3b8";
     ctx.fillText(slide.visualIdea.slice(0, 85) + "...", 110, canvas.height - 175);
 
     // Save
@@ -250,7 +256,7 @@ export const CarouselDesigner: React.FC = () => {
         </div>
 
         {/* Input variables */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-1 md:grid-cols-6 gap-4 mb-6">
           <div className="space-y-1.5 md:col-span-2">
             <label className="text-[10px] font-semibold text-[#66666E] uppercase tracking-wider">Tema del Carrusel</label>
             <input
@@ -262,27 +268,48 @@ export const CarouselDesigner: React.FC = () => {
             />
           </div>
           <div className="space-y-1.5">
-            <label className="text-[10px] font-semibold text-[#66666E] uppercase tracking-wider">Número de Diapositivas</label>
+            <label className="text-[10px] font-semibold text-[#66666E] uppercase tracking-wider">Nº Diapositivas</label>
             <select
               value={slideCount}
               onChange={(e) => setSlideCount(Number(e.target.value))}
               className="w-full bg-[#1A1A1C] border border-[#2A2A2C] focus:border-[#D1FF26] rounded-lg p-3 text-xs text-[#88888E] focus:outline-none"
             >
-              <option value="3">3 Slides (Corto / Promo)</option>
+              <option value="3">3 Slides (Corto)</option>
               <option value="5">5 Slides (Estándar)</option>
               <option value="7">7 Slides (Detallado)</option>
               <option value="10">10 Slides (Máximo)</option>
             </select>
           </div>
           <div className="space-y-1.5">
-            <label className="text-[10px] font-semibold text-[#66666E] uppercase tracking-wider">Canal de Destino</label>
+            <label className="text-[10px] font-semibold text-[#66666E] uppercase tracking-wider">Canal Destino</label>
             <select
               value={platform}
               onChange={(e) => setPlatform(e.target.value)}
               className="w-full bg-[#1A1A1C] border border-[#2A2A2C] focus:border-[#D1FF26] rounded-lg p-3 text-xs text-[#88888E] focus:outline-none"
             >
               <option value="Instagram">Instagram (Carrusel)</option>
-              <option value="LinkedIn">LinkedIn (PDF/Documento)</option>
+              <option value="LinkedIn">LinkedIn (PDF)</option>
+            </select>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-semibold text-[#66666E] uppercase tracking-wider">Tono de Voz</label>
+            <input
+              type="text"
+              value={tone}
+              onChange={(e) => setTone(e.target.value)}
+              className="w-full bg-[#1A1A1C] border border-[#2A2A2C] focus:border-[#D1FF26] rounded-lg p-3 text-xs text-white focus:outline-none"
+              placeholder="Ej: Persuasivo"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-semibold text-[#66666E] uppercase tracking-wider">Motor IA</label>
+            <select
+              value={engine}
+              onChange={(e) => setEngine(e.target.value)}
+              className="w-full bg-[#1A1A1C] border border-[#2A2A2C] focus:border-[#D1FF26] rounded-lg p-3 text-xs text-[#D1FF26] focus:outline-none font-semibold"
+            >
+              <option value="gemini" className="text-[#88888E]">Gemini 3.5 Flash</option>
+              <option value="claude" className="text-[#D1FF26]">Claude 3.5 Haiku ⚡</option>
             </select>
           </div>
         </div>
@@ -296,12 +323,12 @@ export const CarouselDesigner: React.FC = () => {
           {loading ? (
             <>
               <RefreshCw className="w-4 h-4 animate-spin" />
-              <span>Cami está estructurando las ideas...</span>
+              <span>{engine === "claude" ? "Claude Haiku está ideando el carrusel..." : "Cami está estructurando las ideas..."}</span>
             </>
           ) : (
             <>
               <Sparkles className="w-4 h-4 text-black" />
-              <span>Generar Contenido de Diapositivas con Cami & Santi</span>
+              <span>{engine === "claude" ? "Generar con Claude 3.5 Haiku ⚡" : "Generar con Gemini 3.5 Flash 🚀"}</span>
             </>
           )}
         </button>

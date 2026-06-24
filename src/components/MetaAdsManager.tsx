@@ -481,7 +481,7 @@ export const MetaAdsManager: React.FC = () => {
                     <span className="text-xs font-semibold text-[#88888E] uppercase tracking-wider block">Vista Previa de Anuncio</span>
                     
                     {/* Mock phone/ad shell */}
-                    <div className="bg-[#0A0A0B] border border-[#222224] rounded-2xl overflow-hidden relative flex flex-col h-[420px]">
+                    <div className="bg-[#0A0A0B] border border-[#222224] rounded-2xl overflow-hidden relative flex flex-col h-[520px]">
                       {/* Meta header */}
                       <div className="bg-[#141416] px-4 py-3 border-b border-[#222224] flex items-center gap-2.5">
                         <div className="w-8 h-8 rounded-full bg-[#1A1A1C] border border-[#2A2A2C] flex items-center justify-center text-xs font-bold text-[#D1FF26] font-mono">
@@ -497,7 +497,7 @@ export const MetaAdsManager: React.FC = () => {
                       </div>
 
                       {/* Post body */}
-                      <div className="p-3 bg-[#0A0A0B] text-xs text-[#88888E] space-y-2 flex-1 overflow-y-auto select-none custom-scrollbar">
+                      <div className="p-3 bg-[#0A0A0B] text-xs text-[#88888E] space-y-2 flex-1 min-h-0 overflow-y-auto select-none custom-scrollbar">
                         <p className="leading-relaxed whitespace-pre-wrap">
                           <span className="text-[#D1FF26] font-bold">{editedHook}</span> {editedBodyCopy}
                         </p>

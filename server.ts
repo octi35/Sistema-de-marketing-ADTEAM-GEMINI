@@ -4,6 +4,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
+import Anthropic from "@anthropic-ai/sdk";
 
 dotenv.config();
 
@@ -35,6 +36,23 @@ if (apiKey && apiKey !== "MY_GEMINI_API_KEY") {
   console.log("No valid GEMINI_API_KEY found, running in demo fallback mode.");
 }
 
+// Initialize Anthropic safely
+let anthropicClient: Anthropic | null = null;
+const anthropicKey = process.env.ANTHROPIC_API_KEY;
+
+if (anthropicKey && anthropicKey !== "YOUR_ANTHROPIC_API_KEY" && anthropicKey.trim() !== "") {
+  try {
+    anthropicClient = new Anthropic({
+      apiKey: anthropicKey.trim()
+    });
+    console.log("Anthropic API initialized successfully for Claude Haiku.");
+  } catch (err) {
+    console.error("Failed to initialize Anthropic Client:", err);
+  }
+} else {
+  console.log("No valid ANTHROPIC_API_KEY found, running Claude in demo fallback mode.");
+}
+
 // Helper to extract user-supplied Gemini API key from request headers
 function getCustomAiClient(req: express.Request): GoogleGenAI | null {
   const userKey = req.headers["x-gemini-key"] as string || req.headers["X-Gemini-Key"] as string;
@@ -55,11 +73,20 @@ function getCustomAiClient(req: express.Request): GoogleGenAI | null {
   return null;
 }
 
+// Flag to keep track of shared API key quota exhaustion to avoid lagging and error flooding
+let sharedKeyExhaustedUntil = 0;
+
 // Helper wrapper to handle 503/service availability errors by falling back from gemini-3.5-flash to gemini-flash-latest or gemini-3.1-flash-lite
 async function generateContentWithFallback(params: any, customAi?: GoogleGenAI | null) {
   const activeAi = customAi || ai;
   if (!activeAi) {
     throw new Error("Gemini client not initialized");
+  }
+
+  // Check if we are using the shared AI client and it is currently flagged as exhausted
+  if (activeAi === ai && Date.now() < sharedKeyExhaustedUntil) {
+    console.log(`[Gemini Fallback Client] Skipping API call because the shared key is flagged as exhausted (cooldown active).`);
+    throw new Error("Shared key is currently exhausted. Falling back to simulated mode.");
   }
 
   // Fallback chain: requested model, then highly stable gemini-flash-latest, then gemini-3.1-flash-lite
@@ -68,17 +95,56 @@ async function generateContentWithFallback(params: any, customAi?: GoogleGenAI |
 
   let lastError: any = null;
   for (const model of uniqueModels) {
-    try {
-      console.log(`[Gemini Fallback Client] Attempting generation with model: ${model}`);
-      const response = await activeAi.models.generateContent({
-        ...params,
-        model: model
-      });
-      console.log(`[Gemini Fallback Client] Successfully generated content using model: ${model}`);
-      return response;
-    } catch (err: any) {
-      lastError = err;
-      console.warn(`[Gemini Fallback Client] Model ${model} failed: ${err.message || err}`);
+    let attempts = 0;
+    const maxAttempts = 3; // Retry up to 3 times per model for transient errors
+    while (attempts < maxAttempts) {
+      try {
+        attempts++;
+        console.log(`[Gemini Fallback Client] Attempting generation with model: ${model} (attempt ${attempts}/${maxAttempts})`);
+        const response = await activeAi.models.generateContent({
+          ...params,
+          model: model
+        });
+        console.log(`[Gemini Fallback Client] Successfully generated content using model: ${model}`);
+        return response;
+      } catch (err: any) {
+        lastError = err;
+        const errStr = (err.message || String(err)).toLowerCase();
+
+        // Check for hard quota limit (daily limits/resource exhaustion that won't recover immediately)
+        const isHardQuotaExceeded = errStr.includes("exceeded your current quota") || 
+                                    errStr.includes("quota_exhausted") || 
+                                    errStr.includes("resource_exhausted") ||
+                                    errStr.includes("generativelanguage.googleapis.com/generate_content_free_tier_requests") ||
+                                    (errStr.includes("429") && errStr.includes("limit"));
+
+        if (isHardQuotaExceeded) {
+          console.warn(`[Gemini Fallback Client] Model ${model} failed due to hard quota limit (daily limit hit). Skipping retries.`);
+          if (activeAi === ai) {
+            // Flag shared key as exhausted for 5 minutes
+            sharedKeyExhaustedUntil = Date.now() + 5 * 60 * 1000;
+            console.log(`[Gemini Fallback Client] Shared key flagged as exhausted until ${new Date(sharedKeyExhaustedUntil).toISOString()}`);
+          }
+          break; // Exit retry loop for this model immediately
+        }
+
+        const isQuotaOrTransient = errStr.includes("429") || 
+                                   errStr.includes("503") || 
+                                   errStr.includes("quota") || 
+                                   errStr.includes("unavailable") || 
+                                   errStr.includes("demand") || 
+                                   errStr.includes("limit") || 
+                                   errStr.includes("exhausted");
+        
+        if (isQuotaOrTransient && attempts < maxAttempts) {
+          const delay = attempts * 1000; // 1s, then 2s
+          console.warn(`[Gemini Fallback Client] Model ${model} got transient error/rate limit. Retrying in ${delay}ms... Error: ${err.message || err}`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        } else {
+          console.warn(`[Gemini Fallback Client] Model ${model} failed: ${err.message || err}`);
+          break; // Exit retry loop and try the next model
+        }
+      }
     }
   }
   throw lastError || new Error("All models failed to generate content");
@@ -259,17 +325,18 @@ Return strictly valid JSON conforming to the requested schema. Do not include ma
 
 // 2. ENDPOINT: Generate Carousels for Instagram/LinkedIn
 app.post("/api/generate-carousel", async (req, res) => {
-  const { topic, slideCount, platform, tone } = req.body;
+  const { topic, slideCount, platform, tone, engine } = req.body;
   const count = slideCount || 5;
+  const selectedEngine = engine || "gemini";
 
-  const getMockCarousel = () => {
+  const getMockCarousel = (isClaudeFallback = false) => {
     const slides = [];
     const colors = [
-      { bg: "#0f172a", text: "#f8fafc", accent: "#3b82f6" }, // slate dark
+      { bg: "#FCE22A", text: "#111112", accent: "#000000" }, // Nano Banana Yellow 🍌
+      { bg: "#0f172a", text: "#f8fafc", accent: "#fbbf24" }, // Slate Dark with Gold Accent
       { bg: "#1e1b4b", text: "#f8fafc", accent: "#ec4899" }, // indigo pink
-      { bg: "#022c22", text: "#f0fdf4", accent: "#10b981" }, // emerald deep
-      { bg: "#7c2d12", text: "#fff7ed", accent: "#f97316" }, // amber deep
-      { bg: "#581c87", text: "#faf5ff", accent: "#a855f7" }  // purple vibrant
+      { bg: "#022c22", text: "#f0fdf4", accent: "#2dd4bf" }, // Emerald Deep
+      { bg: "#7c2d12", text: "#fff7ed", accent: "#fdba74" }  // Amber Orange
     ];
     const theme = colors[Math.floor(Math.random() * colors.length)];
 
@@ -279,17 +346,17 @@ app.post("/api/generate-carousel", async (req, res) => {
       let visualIdea = "";
 
       if (i === 1) {
-        slideTitle = `🔥 El Secreto de ${topic || "Ventas"}`;
-        slideBody = "Desliza para descubrir cómo multiplicar tus resultados en menos de 30 días sin complicaciones.";
-        visualIdea = "Bold title centered with a futuristic glowing arrow pointing to the right.";
+        slideTitle = `🔥 El Secreto de ${topic || "Ventas"} (vía Claude)`;
+        slideBody = "Desliza para descubrir cómo multiplicar tus resultados usando metodologías ágiles de marketing.";
+        visualIdea = "Bold title centered with a futuristic sleek black neon graphic or high contrast structure.";
       } else if (i === count) {
-        slideTitle = "🚀 ¡Es tu Turno!";
-        slideBody = "Guarda este post, compártelo con alguien que lo necesite y haz clic en el enlace para empezar hoy.";
-        visualIdea = "A hand pointing to a save and share icon, sleek and clean design.";
+        slideTitle = "🚀 ¡Comienza Hoy Mismo!";
+        slideBody = "Guarda este post, compártelo con tu equipo y envíanos un DM para diseñar tu estrategia personalizada.";
+        visualIdea = "Minimalist bookmark icon representing save and share with high contrast accents.";
       } else {
-        slideTitle = `Paso 0${i - 1}: Simplifica tu Proceso`;
-        slideBody = `Implementa estrategias claras de marketing para tu audiencia. La constancia supera al talento en cualquier plataforma digital.`;
-        visualIdea = `Minimalist diagram showing an upward trend line with a check icon.`;
+        slideTitle = `Paso 0${i - 1}: Optimiza tu Conversión`;
+        slideBody = `Implementa flujos automatizados para testear creativos y acelerar la toma de decisiones con datos reales.`;
+        visualIdea = `Sleek high-contrast geometric outline pattern or upward vector trend.`;
       }
 
       slides.push({
@@ -298,17 +365,118 @@ app.post("/api/generate-carousel", async (req, res) => {
         body: slideBody,
         visualIdea: visualIdea,
         bgGradientStart: theme.bg,
-        bgGradientEnd: theme.bg === "#0f172a" ? "#1e293b" : theme.bg + "ee",
+        bgGradientEnd: theme.bg === "#FCE22A" ? "#FCD900" : (theme.bg === "#0f172a" ? "#1e293b" : theme.bg + "ee"),
         textColor: theme.text,
         accentColor: theme.accent
       });
     }
-    return { slides, platform: platform || "Instagram", topic: topic || "Contenido" };
+    return { 
+      slides, 
+      platform: platform || "Instagram", 
+      topic: topic || "Contenido",
+      engineUsed: isClaudeFallback ? "Claude Haiku (Simulación)" : "Gemini (Simulación)"
+    };
   };
 
+  if (selectedEngine === "claude") {
+    const userAnthropicKey = req.headers["x-anthropic-key"] as string || req.headers["X-Anthropic-Key"] as string;
+    let activeAnthropicClient = anthropicClient;
+    
+    if (userAnthropicKey && userAnthropicKey.trim() !== "") {
+      try {
+        activeAnthropicClient = new Anthropic({
+          apiKey: userAnthropicKey.trim()
+        });
+      } catch (err) {
+        console.error("Failed to initialize custom Anthropic client:", err);
+      }
+    }
+
+    if (!activeAnthropicClient) {
+      console.log("No valid ANTHROPIC_API_KEY found, running Claude in demo fallback mode.");
+      return res.json({ 
+        ...getMockCarousel(true), 
+        isMock: true, 
+        warning: "Usando simulación de Claude Haiku. Configura tu API Key en la sección de Integraciones para habilitar la API real." 
+      });
+    }
+
+    try {
+      console.log(`[Claude API] Generating carousel with Claude Haiku for topic: ${topic}`);
+      const prompt = `You are Santi, the Content Strategist AI, and Lauti, the Scriptwriter.
+Generate a structured Carousel presentation of exactly ${count} slides for the platform: ${platform || "Instagram"}.
+Topic: ${topic}
+Tone of Voice: ${tone || "Professional & Persuasive"}
+
+For each slide from 1 to ${count}, generate:
+1. slideNumber: number (1 to ${count})
+2. title: An extremely punchy slide headline (max 50 chars)
+3. body: The slide explanation text or bullet points (max 180 chars)
+4. visualIdea: Description of the background graphics, icons, or vector elements that should go on the canvas
+5. bgGradientStart: A professional hex color code matching the tone (e.g. #FCE22A for Nano Banana Yellow, or #0f172a, or #022c22)
+6. bgGradientEnd: A complementary hex color code to finish the gradient (e.g. #FCD900 for Banana Yellow, or #1e293b for Slate)
+7. textColor: A highly readable hex color code for text (e.g. #FFFFFF, #000000 or #111112 for light backgrounds like Banana Yellow)
+8. accentColor: A vibrant hex color code for highlighting key words (e.g. #000000 on yellow, or #fbbf24 on Slate)
+
+Note: Slide 1 MUST be a high-conversion Cover slide. Slide ${count} MUST be an engaging Call-To-Action (CTA) slide.
+Return strictly a valid JSON object matching this TypeScript structure:
+{
+  "slides": Array<{
+    "slideNumber": number,
+    "title": string,
+    "body": string,
+    "visualIdea": string,
+    "bgGradientStart": string,
+    "bgGradientEnd": string,
+    "textColor": string,
+    "accentColor": string
+  }>,
+  "platform": string,
+  "topic": string
+}
+Do not write any preamble, explanation, or markdown backtick block. Just the raw JSON string.`;
+
+      const response = await activeAnthropicClient.messages.create({
+        model: "claude-3-5-haiku-20241022",
+        max_tokens: 3500,
+        temperature: 0.75,
+        system: "You are a master of high-converting social media carousels. You output only raw, valid JSON matching the requested schema and nothing else. No explanation, no backticks.",
+        messages: [{ role: "user", content: prompt }]
+      });
+
+      let responseText = "";
+      if (response.content[0].type === "text") {
+        responseText = response.content[0].text;
+      }
+
+      let cleanJson = responseText.trim();
+      if (cleanJson.startsWith("```json")) {
+        cleanJson = cleanJson.substring(7);
+      }
+      if (cleanJson.startsWith("```")) {
+        cleanJson = cleanJson.substring(3);
+      }
+      if (cleanJson.endsWith("```")) {
+        cleanJson = cleanJson.substring(0, cleanJson.length - 3);
+      }
+      cleanJson = cleanJson.trim();
+
+      const parsed = JSON.parse(cleanJson);
+      return res.json({ ...parsed, isMock: false, engineUsed: "Claude Haiku" });
+    } catch (error: any) {
+      console.error("Error generating carousel via Claude Haiku:", error);
+      return res.json({ 
+        ...getMockCarousel(true), 
+        isMock: true, 
+        error: `Fallo la API de Claude Haiku: ${error.message || error}. Usando simulación de carrusel.` 
+      });
+    }
+  }
+
+  // Gemini engine flow (Default)
   const activeAi = getCustomAiClient(req) || ai;
   if (!activeAi) {
-    return res.json(getMockCarousel());
+    return res.json(getMockCarousel(false));
   }
 
   try {
@@ -364,10 +532,10 @@ Return strictly valid JSON conforming to the requested schema. No markdown wrapp
     }, activeAi);
 
     const parsed = JSON.parse(response.text || "{}");
-    res.json({ ...parsed, isMock: false });
+    res.json({ ...parsed, isMock: false, engineUsed: "Gemini" });
   } catch (error) {
     console.error("Error generating carousel:", error);
-    res.json({ ...getMockCarousel(), isMock: true, error: "Fallo de API, usando fallback inteligente." });
+    res.json({ ...getMockCarousel(false), isMock: true, error: "Fallo de API, usando fallback inteligente." });
   }
 });
 
@@ -943,6 +1111,401 @@ app.post("/api/integrations/test", async (req, res) => {
     }
   } else {
     res.status(400).json({ error: "Invalid provider specified" });
+  }
+});
+
+
+// ==========================================
+// REAL OAUTH & API ENDPOINTS FOR LINKEDIN & META
+// ==========================================
+
+// 1. GET /api/linkedin/auth - Redirects to LinkedIn OAuth
+app.get("/api/linkedin/auth", (req, res) => {
+  const clientId = process.env.LINKEDIN_CLIENT_ID || "";
+  const redirectUri = process.env.LINKEDIN_REDIRECT_URI || (process.env.APP_URL ? `${process.env.APP_URL}/api/linkedin/callback` : `${req.protocol}://${req.get('host')}/api/linkedin/callback`);
+  
+  const authUrl = `https://www.linkedin.com/oauth/v2/authorization?` + new URLSearchParams({
+    response_type: "code",
+    client_id: clientId,
+    redirect_uri: redirectUri,
+    state: "linkedin_auth_state",
+    scope: "openid profile email w_member_social"
+  }).toString();
+  
+  res.redirect(authUrl);
+});
+
+// 2. GET /api/linkedin/callback - Exchanges code for token, returns postMessage script
+app.get(["/api/linkedin/callback", "/api/linkedin/callback/"], async (req, res) => {
+  const { code } = req.query;
+  if (!code) {
+    return res.status(400).send("No authorization code provided by LinkedIn");
+  }
+
+  try {
+    const clientId = process.env.LINKEDIN_CLIENT_ID || "";
+    const clientSecret = process.env.LINKEDIN_CLIENT_SECRET || "";
+    const redirectUri = process.env.LINKEDIN_REDIRECT_URI || (process.env.APP_URL ? `${process.env.APP_URL}/api/linkedin/callback` : `${req.protocol}://${req.get('host')}/api/linkedin/callback`);
+
+    const tokenResponse = await fetch("https://www.linkedin.com/oauth/v2/accessToken", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        grant_type: "authorization_code",
+        code: code as string,
+        redirect_uri: redirectUri,
+        client_id: clientId,
+        client_secret: clientSecret,
+      }).toString(),
+    });
+
+    const data = await tokenResponse.json() as any;
+    if (!tokenResponse.ok) {
+      console.error("LinkedIn OAuth Exchange error:", data);
+      return res.status(tokenResponse.status).send(`Failed to exchange LinkedIn token: ${JSON.stringify(data)}`);
+    }
+
+    const accessToken = data.access_token;
+    res.send(`
+      <html>
+        <body style="font-family: sans-serif; background: #0A0A0B; color: #fff; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; text-align: center;">
+          <div>
+            <h2 style="color: #D1FF26; margin-bottom: 8px;">¡Vinculación Exitosa! ⚡</h2>
+            <p style="color: #88888E; font-size: 14px;">LinkedIn se ha conectado correctamente. Esta ventana se cerrará automáticamente...</p>
+            <script>
+              if (window.opener) {
+                window.opener.postMessage({ 
+                  type: 'OAUTH_LINKEDIN_SUCCESS', 
+                  token: ${JSON.stringify(accessToken)},
+                  expires_in: ${JSON.stringify(data.expires_in)}
+                }, '*');
+                setTimeout(() => window.close(), 1000);
+              } else {
+                document.body.innerHTML = "<h3>Conexión exitosa con LinkedIn. Puedes cerrar esta ventana.</h3>";
+              }
+            </script>
+          </div>
+        </body>
+      </html>
+    `);
+  } catch (error: any) {
+    res.status(500).send(`Error exchanging LinkedIn credentials: ${error.message || error}`);
+  }
+});
+
+// 3. GET /api/linkedin/profile - Gets LinkedIn user profile details
+app.get("/api/linkedin/profile", async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    return res.status(401).json({ error: "Missing authorization header" });
+  }
+
+  try {
+    const token = authHeader.replace("Bearer ", "");
+    // Try openid userinfo first
+    const response = await fetch("https://api.linkedin.com/v2/userinfo", {
+      headers: { "Authorization": `Bearer ${token}` }
+    });
+
+    if (response.ok) {
+      const userinfo = await response.json() as any;
+      return res.json({
+        id: userinfo.sub,
+        name: userinfo.name || `${userinfo.given_name} ${userinfo.family_name}`,
+        picture: userinfo.picture,
+        email: userinfo.email
+      });
+    } else {
+      // Fallback to legacy me endpoint
+      const meResponse = await fetch("https://api.linkedin.com/v2/me", {
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      const meData = await meResponse.json() as any;
+      if (!meResponse.ok) {
+        return res.status(meResponse.status).json(meData);
+      }
+      return res.json({
+        id: meData.id,
+        name: `${meData.localizedFirstName} ${meData.localizedLastName}`,
+        picture: meData.profilePicture || null
+      });
+    }
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || "Failed to fetch LinkedIn profile" });
+  }
+});
+
+// 4. POST /api/linkedin/post - Publishes posts on LinkedIn via ugcPosts
+app.post("/api/linkedin/post", async (req, res) => {
+  const { text, authorUrn, token } = req.body;
+  const activeToken = token || req.headers.authorization?.replace("Bearer ", "");
+  if (!activeToken) {
+    return res.status(401).json({ error: "Missing active LinkedIn token" });
+  }
+
+  try {
+    let urn = authorUrn;
+    if (!urn) {
+      // Fetch profile info to find the member URN
+      const profileRes = await fetch("https://api.linkedin.com/v2/userinfo", {
+        headers: { "Authorization": `Bearer ${activeToken}` }
+      });
+      if (profileRes.ok) {
+        const userinfo = await profileRes.json() as any;
+        urn = `urn:li:person:${userinfo.sub}`;
+      } else {
+        const meRes = await fetch("https://api.linkedin.com/v2/me", {
+          headers: { "Authorization": `Bearer ${activeToken}` }
+        });
+        const meData = await meRes.json() as any;
+        if (!meRes.ok) {
+          return res.status(meRes.status).json({ error: "Unable to retrieve member URN", details: meData });
+        }
+        urn = `urn:li:person:${meData.id}`;
+      }
+    }
+
+    const response = await fetch("https://api.linkedin.com/v2/ugcPosts", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${activeToken}`,
+        "X-Restli-Protocol-Version": "2.0.0",
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        author: urn,
+        lifecycleState: "PUBLISHED",
+        specificContent: {
+          "com.linkedin.ugc.ShareContent": {
+            "shareCommentary": {
+              "text": text || "Publicación automática desde AdTeam AI Marketing Assistant"
+            },
+            "shareMediaCategory": "NONE"
+          }
+        },
+        visibility: {
+          "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC"
+        }
+      })
+    });
+
+    const resData = await response.json() as any;
+    if (!response.ok) {
+      console.error("LinkedIn ugcPosts post failed:", resData);
+      return res.status(response.status).json({ success: false, error: resData });
+    }
+    return res.json({ success: true, result: resData });
+  } catch (error: any) {
+    return res.status(500).json({ success: false, error: error.message || "Failed to create LinkedIn post" });
+  }
+});
+
+// 5. GET /api/meta/auth - Redirects to Meta/Facebook OAuth Dialog
+app.get("/api/meta/auth", (req, res) => {
+  const appId = process.env.META_APP_ID || "";
+  const redirectUri = process.env.META_REDIRECT_URI || (process.env.APP_URL ? `${process.env.APP_URL}/api/meta/callback` : `${req.protocol}://${req.get('host')}/api/meta/callback`);
+  
+  const authUrl = `https://www.facebook.com/v18.0/dialog/oauth?` + new URLSearchParams({
+    client_id: appId,
+    redirect_uri: redirectUri,
+    state: "meta_auth_state",
+    scope: "pages_show_list,pages_read_engagement,pages_manage_posts,instagram_basic,instagram_content_publish,ads_management,ads_read"
+  }).toString();
+  
+  res.redirect(authUrl);
+});
+
+// 6. GET /api/meta/callback - Exchanges code for Page/User access token and sends success message
+app.get(["/api/meta/callback", "/api/meta/callback/"], async (req, res) => {
+  const { code } = req.query;
+  if (!code) {
+    return res.status(400).send("No authorization code provided by Meta");
+  }
+
+  try {
+    const appId = process.env.META_APP_ID || "";
+    const appSecret = process.env.META_APP_SECRET || "";
+    const redirectUri = process.env.META_REDIRECT_URI || (process.env.APP_URL ? `${process.env.APP_URL}/api/meta/callback` : `${req.protocol}://${req.get('host')}/api/meta/callback`);
+
+    const tokenUrl = `https://graph.facebook.com/v18.0/oauth/access_token?` + new URLSearchParams({
+      client_id: appId,
+      client_secret: appSecret,
+      redirect_uri: redirectUri,
+      code: code as string
+    }).toString();
+
+    const tokenRes = await fetch(tokenUrl);
+    const data = await tokenRes.json() as any;
+
+    if (!tokenRes.ok) {
+      console.error("Meta OAuth Exchange error:", data);
+      return res.status(tokenRes.status).send(`Failed to exchange Meta token: ${JSON.stringify(data)}`);
+    }
+
+    const accessToken = data.access_token;
+    res.send(`
+      <html>
+        <body style="font-family: sans-serif; background: #0A0A0B; color: #fff; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; text-align: center;">
+          <div>
+            <h2 style="color: #D1FF26; margin-bottom: 8px;">¡Conectado con Meta! ✨</h2>
+            <p style="color: #88888E; font-size: 14px;">Facebook e Instagram se han sincronizado. Esta ventana se cerrará automáticamente...</p>
+            <script>
+              if (window.opener) {
+                window.opener.postMessage({ 
+                  type: 'OAUTH_META_SUCCESS', 
+                  token: ${JSON.stringify(accessToken)},
+                  expires_in: ${JSON.stringify(data.expires_in)}
+                }, '*');
+                setTimeout(() => window.close(), 1000);
+              } else {
+                document.body.innerHTML = "<h3>Conexión exitosa con Meta. Puedes cerrar esta ventana.</h3>";
+              }
+            </script>
+          </div>
+        </body>
+      </html>
+    `);
+  } catch (error: any) {
+    res.status(500).send(`Error exchanging Meta credentials: ${error.message || error}`);
+  }
+});
+
+// 7. GET /api/meta/accounts - Lists FB Pages and linked IG business accounts
+app.get("/api/meta/accounts", async (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
+    return res.status(401).json({ error: "Missing authorization header" });
+  }
+  const token = authHeader.replace("Bearer ", "");
+
+  try {
+    const pagesUrl = `https://graph.facebook.com/v18.0/me/accounts?access_token=${token}`;
+    const pagesRes = await fetch(pagesUrl);
+    const pagesData = await pagesRes.json() as any;
+
+    if (!pagesRes.ok) {
+      return res.status(pagesRes.status).json(pagesData);
+    }
+
+    const pagesList = pagesData.data || [];
+    const resultPages = [];
+
+    for (const page of pagesList) {
+      const igUrl = `https://graph.facebook.com/v18.0/${page.id}?fields=instagram_business_account,name,picture&access_token=${token}`;
+      let igAccount = null;
+      try {
+        const igRes = await fetch(igUrl);
+        if (igRes.ok) {
+          const igData = await igRes.json() as any;
+          if (igData.instagram_business_account) {
+            igAccount = igData.instagram_business_account;
+          }
+        }
+      } catch (err) {
+        console.error(`Error fetching IG account linked to Facebook Page ${page.id}:`, err);
+      }
+
+      resultPages.push({
+        id: page.id,
+        name: page.name,
+        access_token: page.access_token,
+        category: page.category,
+        tasks: page.tasks,
+        instagram_business_account: igAccount
+      });
+    }
+
+    res.json({ pages: resultPages });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || "Failed to retrieve Meta accounts" });
+  }
+});
+
+// 8. POST /api/meta/instagram/post - Publishes to IG Business (container creation + container publishing)
+app.post("/api/meta/instagram/post", async (req, res) => {
+  const { igAccountId, imageUrl, caption, token } = req.body;
+  const activeToken = token || req.headers.authorization?.replace("Bearer ", "");
+  if (!activeToken) {
+    return res.status(401).json({ error: "Missing active Meta access token" });
+  }
+  if (!igAccountId || !imageUrl) {
+    return res.status(400).json({ error: "Missing required fields (igAccountId, imageUrl)" });
+  }
+
+  try {
+    // Step 1: Create media container
+    const containerUrl = `https://graph.facebook.com/v18.0/${igAccountId}/media`;
+    const containerRes = await fetch(containerUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        image_url: imageUrl,
+        caption: caption || "",
+        access_token: activeToken
+      })
+    });
+
+    const containerData = await containerRes.json() as any;
+    if (!containerRes.ok) {
+      return res.status(containerRes.status).json({ step: "create_container", error: containerData });
+    }
+
+    const creationId = containerData.id;
+
+    // Step 2: Publish media container
+    const publishUrl = `https://graph.facebook.com/v18.0/${igAccountId}/media_publish`;
+    const publishRes = await fetch(publishUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        creation_id: creationId,
+        access_token: activeToken
+      })
+    });
+
+    const publishData = await publishRes.json() as any;
+    if (!publishRes.ok) {
+      return res.status(publishRes.status).json({ step: "publish", error: publishData });
+    }
+
+    res.json({ success: true, result: publishData });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || "Failed to publish on Instagram Business" });
+  }
+});
+
+// 9. POST /api/meta/facebook/post - Publishes message on a Facebook page feed
+app.post("/api/meta/facebook/post", async (req, res) => {
+  const { pageId, message, pageToken, token } = req.body;
+  const activeToken = pageToken || token || req.headers.authorization?.replace("Bearer ", "");
+  if (!activeToken) {
+    return res.status(401).json({ error: "Missing page or user access token to post on Facebook Page" });
+  }
+  if (!pageId) {
+    return res.status(400).json({ error: "Missing target pageId" });
+  }
+
+  try {
+    const feedUrl = `https://graph.facebook.com/v18.0/${pageId}/feed`;
+    const feedRes = await fetch(feedUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message: message || "",
+        access_token: activeToken
+      })
+    });
+
+    const feedData = await feedRes.json() as any;
+    if (!feedRes.ok) {
+      return res.status(feedRes.status).json({ error: feedData });
+    }
+
+    res.json({ success: true, result: feedData });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message || "Failed to publish post on Facebook Page" });
   }
 });
 
